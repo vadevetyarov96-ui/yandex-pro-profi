@@ -6,7 +6,8 @@ export interface City {
 }
 
 export interface HourBucket {
-  hourLabel: string; // "15:00"
+  /** Час прибытия транспорта, напр. "16:00" */
+  hourLabel: string;
   hour: number;
   isPeak?: boolean;
 }
@@ -14,9 +15,10 @@ export interface HourBucket {
 export interface AirportHourStats extends HourBucket {
   flights: number;
   passengers: number;
-  windowLabel: string; // "14:30–15:30"
-  adviceArrive?: string;
-  adviceExit?: string;
+  /** Окно выхода пассажиров, напр. "16:30–17:15" */
+  exitWindow: string;
+  /** К какому времени подъехать водителю */
+  arriveBy: string;
 }
 
 export interface AirportCardData {
@@ -34,7 +36,10 @@ export interface StationHourStats extends HourBucket {
   longDistance: number;
   suburban: number;
   total: number;
-  windowLabel: string; // "14:45–15:45"
+  /** Окно выхода пассажиров, напр. "16:10–16:45" */
+  exitWindow: string;
+  /** К какому времени подъехать водителю */
+  arriveBy: string;
 }
 
 export interface StationCardData {
@@ -43,6 +48,8 @@ export interface StationCardData {
   hours: StationHourStats[];
   longDistanceTotal: number;
   suburbanTotal: number;
+  tipArrive?: string;
+  tipExit?: string;
 }
 
 export interface SessionUser {
@@ -56,12 +63,22 @@ export interface AirportsPayload {
   updatedAt: string;
   cityId: CityId;
   airports: AirportCardData[];
-  tip: { airport: string; arriveBy: string; passengers: number } | null;
+  tip: {
+    airport: string;
+    arriveBy: string;
+    exitWindow: string;
+    passengers: number;
+  } | null;
 }
 
 export interface StationsPayload {
   updatedAt: string;
   cityId: CityId;
   stations: StationCardData[];
-  tip: { station: string; arriveBy: string; longDistance: number } | null;
+  tip: {
+    station: string;
+    arriveBy: string;
+    exitWindow: string;
+    longDistance: number;
+  } | null;
 }

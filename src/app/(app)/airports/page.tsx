@@ -42,7 +42,7 @@ export default function AirportsPage() {
       <main className="px-4 pb-6 pt-4">
         <h1 className="text-3xl font-extrabold text-white">Аэропорты</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Окна прилётов и поток пассажиров
+          Прилёт → выход через ~30–75 мин · когда подъехать
         </p>
 
         <div className="mt-4 rounded-2xl border border-[var(--gold)]/40 bg-[var(--card)] px-4 py-3">
@@ -68,7 +68,7 @@ export default function AirportsPage() {
                 {data.tip.airport} · подъехать к {data.tip.arriveBy}
               </p>
               <p className="mt-0.5 text-sm text-[var(--green)]">
-                {formatPassengers(data.tip.passengers)} пассажиров
+                выход {data.tip.exitWindow} · {formatPassengers(data.tip.passengers)} пасс.
               </p>
             </div>
             <button

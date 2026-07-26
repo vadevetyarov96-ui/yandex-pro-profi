@@ -37,7 +37,9 @@ export default function StationsPage() {
       <AppHeader onRefresh={() => void load(true)} refreshing={refreshing} />
       <main className="px-4 pb-6 pt-4">
         <h1 className="text-3xl font-extrabold text-white">Вокзалы</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">Когда есть смысл подъехать</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Прибытие → выход через 10–15 мин, около получаса
+        </p>
 
         <div className="mt-4 rounded-2xl border border-[var(--gold)]/40 bg-[var(--card)] px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -64,7 +66,7 @@ export default function StationsPage() {
                   Лучше к {data.tip.arriveBy}
                 </p>
                 <p className="mt-1 text-sm text-[var(--green)]">
-                  {data.tip.station} · {data.tip.longDistance} дальних в ближайший час
+                  {data.tip.station} · выход {data.tip.exitWindow} · {data.tip.longDistance} дальних
                 </p>
               </div>
             </div>

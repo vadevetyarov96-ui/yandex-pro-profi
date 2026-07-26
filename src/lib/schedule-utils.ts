@@ -23,6 +23,46 @@ export function formatHour(hour: number): string {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
+/** Format HH:MM from total minutes since midnight (wraps 24h). */
+export function formatClock(totalMinutes: number): string {
+  const m = ((totalMinutes % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
+export function formatRange(fromMin: number, toMin: number): string {
+  return `${formatClock(fromMin)}–${formatClock(toMin)}`;
+}
+
+/**
+ * Airport: plane lands at hour H → passengers exit ~+30…+75 min.
+ * Example: 16:00 → выход 16:30–17:15, подъехать к 16:30.
+ */
+export function airportExitForLandingHour(hour: number) {
+  const land = hour * 60;
+  const exitFrom = land + 30;
+  const exitTo = land + 75;
+  return {
+    exitWindow: formatRange(exitFrom, exitTo),
+    arriveBy: formatClock(exitFrom),
+  };
+}
+
+/**
+ * Station: train arrives at hour H → exit starts in 10–15 min, lasts ~30 min.
+ * Example: 16:00 → выход 16:10–16:45, подъехать к 16:10.
+ */
+export function stationExitForArrivalHour(hour: number) {
+  const arrive = hour * 60;
+  const exitFrom = arrive + 10;
+  const exitTo = arrive + 45;
+  return {
+    exitWindow: formatRange(exitFrom, exitTo),
+    arriveBy: formatClock(exitFrom),
+  };
+}
+
 export function formatPassengers(n: number): string {
   if (n >= 1000) {
     const k = n / 1000;

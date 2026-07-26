@@ -1,5 +1,6 @@
 import type { AirportCardData, AirportsPayload, CityId } from "./types";
 import {
+  airportExitForLandingHour,
   formatHour,
   hashSeed,
   moscowDateKey,
@@ -15,20 +16,13 @@ const MOSCOW_AIRPORTS = [
   { id: "zia", name: "Жуковский", code: "ZIA", baseFlights: 6, paxPerFlight: 120 },
 ] as const;
 
-function windowForHour(hour: number) {
-  const fromH = (hour + 23) % 24;
-  const from = `${String(fromH).padStart(2, "0")}:30`;
-  const to = `${String(hour).padStart(2, "0")}:30`;
-  return `${from}–${to}`;
-}
-
 function buildAirport(
   meta: (typeof MOSCOW_AIRPORTS)[number],
   hours: number[],
   seedKey: string,
 ): AirportCardData {
   const rnd = mulberry32(hashSeed("airport", meta.id, seedKey));
-  const hourStats = hours.map((hour, idx) => {
+  const hourStats = hours.map((hour) => {
     const rush = hour >= 7 && hour <= 10 || hour >= 17 && hour <= 22;
     const night = hour >= 0 && hour <= 5;
     let flights = Math.round(
@@ -37,22 +31,16 @@ function buildAirport(
     flights = Math.max(1, Math.min(55, flights));
     const passengers = Math.round(flights * meta.paxPerFlight * (0.85 + rnd() * 0.25));
     const isPeak = flights >= meta.baseFlights * 1.15;
-    const arriveMin = 40 + Math.floor(rnd() * 15);
-    const exitStart = (hour + 23) % 24;
-    const adviceArrive = `${String(exitStart).padStart(2, "0")}:${arriveMin}`;
-    const exitEndH = hour;
-    const exitEndM = 20 + Math.floor(rnd() * 25);
-    const adviceExit = `${String(exitStart).padStart(2, "0")}:30–${String(exitEndH).padStart(2, "0")}:${String(exitEndM).padStart(2, "0")}`;
+    const { exitWindow, arriveBy } = airportExitForLandingHour(hour);
 
     return {
       hour,
       hourLabel: formatHour(hour),
       flights,
       passengers,
-      windowLabel: windowForHour(hour),
+      exitWindow,
+      arriveBy,
       isPeak,
-      adviceArrive: idx === 0 ? adviceArrive : undefined,
-      adviceExit: idx === 0 ? adviceExit : undefined,
     };
   });
 
@@ -66,8 +54,8 @@ function buildAirport(
     hours: hourStats,
     nowFlights: now?.flights ?? 0,
     peak,
-    tipArrive: now?.adviceArrive,
-    tipExit: now?.adviceExit,
+    tipArrive: now?.arriveBy,
+    tipExit: now?.exitWindow,
   };
 }
 
@@ -77,7 +65,6 @@ export function getAirportsSchedule(
 ): AirportsPayload {
   const now = moscowNow();
   const dateKey = moscowDateKey(now);
-  // Flights refresh on user action — include refreshToken in seed
   const seedKey = `${dateKey}|${refreshToken ?? "init"}|${Math.floor(now.getTime() / 60000)}`;
   const hours = upcomingHours(12, now);
 
@@ -86,30 +73,15 @@ export function getAirportsSchedule(
       ? MOSCOW_AIRPORTS.map((a) => buildAirport(a, hours, seedKey))
       : [];
 
-  // Best tip: max passengers in next 3 hours across airports
-  let tip: AirportsPayload["tip"] = null;
-  let best = 0;
-  for (const a of airports) {
-    for (const h of a.hours.slice(0, 3)) {
-      if (h.passengers > best) {
-        best = h.passengers;
-        tip = {
-          airport: a.name,
-          arriveBy: h.adviceArrive ?? h.hourLabel,
-          passengers: h.passengers,
-        };
-      }
-    }
-  }
-  // Prefer first hour advice if available
   const top = [...airports].sort((x, y) => y.nowFlights - x.nowFlights)[0];
-  if (top?.tipArrive) {
-    tip = {
-      airport: top.name,
-      arriveBy: top.tipArrive,
-      passengers: top.hours[0]?.passengers ?? tip?.passengers ?? 0,
-    };
-  }
+  const tip = top?.hours[0]
+    ? {
+        airport: top.name,
+        arriveBy: top.hours[0].arriveBy,
+        exitWindow: top.hours[0].exitWindow,
+        passengers: top.hours[0].passengers,
+      }
+    : null;
 
   return {
     updatedAt: now.toISOString(),
