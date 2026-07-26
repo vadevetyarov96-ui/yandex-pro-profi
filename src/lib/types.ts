@@ -69,6 +69,7 @@ export interface AirportsPayload {
     exitWindow: string;
     passengers: number;
   } | null;
+  source?: string;
 }
 
 export interface StationsPayload {
@@ -81,4 +82,6 @@ export interface StationsPayload {
     exitWindow: string;
     longDistance: number;
   } | null;
+  source?: string;
+  suburbanNote?: string;
 }

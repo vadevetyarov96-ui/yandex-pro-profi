@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { AirportCard } from "@/components/AirportCard";
+import { DataAttribution } from "@/components/DataAttribution";
 import { formatPassengers } from "@/lib/schedule-utils";
 import type { AirportsPayload } from "@/lib/types";
 
@@ -96,9 +97,12 @@ export default function AirportsPage() {
         </div>
 
         {data && (
-          <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-            Прилёты обновляются по кнопке «Обновить»
-          </p>
+          <>
+            <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
+              Прилёты — актуальные данные; обновление по кнопке «Обновить»
+            </p>
+            <DataAttribution />
+          </>
         )}
       </main>
     </>

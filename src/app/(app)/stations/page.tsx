@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AppHeader } from "@/components/AppHeader";
+import { DataAttribution } from "@/components/DataAttribution";
 import { StationCard } from "@/components/StationCard";
 import type { StationsPayload } from "@/lib/types";
 
@@ -106,9 +107,12 @@ export default function StationsPage() {
         </div>
 
         {data && (
-          <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-            Поезда и электрички обновляются раз в сутки
-          </p>
+          <>
+            <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
+              Поезда дальнего следования — на сутки
+            </p>
+            <DataAttribution note={data.suburbanNote} />
+          </>
         )}
       </main>
     </>

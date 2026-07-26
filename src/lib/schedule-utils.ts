@@ -72,9 +72,9 @@ export function formatPassengers(n: number): string {
   return `≈${n}`;
 }
 
-/** Next N hours starting from current hour */
+/** Next N hours starting from current Moscow hour */
 export function upcomingHours(count: number, from = new Date()): number[] {
-  const start = from.getHours();
+  const start = moscowHour(from);
   return Array.from({ length: count }, (_, i) => (start + i) % 24);
 }
 
@@ -82,8 +82,28 @@ export function moscowDateKey(d = new Date()): string {
   return d.toLocaleDateString("en-CA", { timeZone: "Europe/Moscow" });
 }
 
+export function moscowHour(d = new Date()): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  return Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+}
+
+/** Moscow observes permanent UTC+3 */
+export function moscowWallTime(
+  dateKey: string,
+  hour: number,
+  minute = 0,
+  second = 0,
+): Date {
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  const ss = String(second).padStart(2, "0");
+  return new Date(`${dateKey}T${hh}:${mm}:${ss}+03:00`);
+}
+
 export function moscowNow(): Date {
-  return new Date(
-    new Date().toLocaleString("en-US", { timeZone: "Europe/Moscow" }),
-  );
+  return new Date();
 }
