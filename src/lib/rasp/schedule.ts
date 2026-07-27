@@ -61,14 +61,9 @@ function dedupe(arrivals: RaspArrival[]) {
   });
 }
 
-/** Sort: long-distance trains first, then suburban; within group by time. */
-function sortStationItems(longList: RaspArrival[], subList: RaspArrival[]) {
-  return [...longList, ...subList].sort((a, b) => {
-    const rank = (t: RaspArrival) => (t.transportType === "train" ? 0 : 1);
-    const r = rank(a) - rank(b);
-    if (r !== 0) return r;
-    return a.at.getTime() - b.at.getTime();
-  });
+/** Sort arrivals by time only (train priority is only for tips). */
+function sortByTime(longList: RaspArrival[], subList: RaspArrival[]) {
+  return [...longList, ...subList].sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
 function pickStationAdvice(
@@ -220,7 +215,7 @@ async function loadStation(
       exitWindow,
       arriveBy,
       isPeak: longDistance >= 3,
-      items: sortStationItems(longList, subList).map(toScheduleItemDto),
+      items: sortByTime(longList, subList).map(toScheduleItemDto),
     };
   });
 
