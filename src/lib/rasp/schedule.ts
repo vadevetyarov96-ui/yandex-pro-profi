@@ -1,5 +1,6 @@
 import {
   adviceInstant,
+  airportExitForLandingAt,
   airportExitForLandingHour,
   formatHour,
   isFutureAdvice,
@@ -7,6 +8,7 @@ import {
   moscowHour,
   moscowNow,
   moscowWallTime,
+  stationExitForArrivalAt,
   stationExitForArrivalHour,
   upcomingHours,
 } from "@/lib/schedule-utils";
@@ -66,6 +68,24 @@ function sortByTime(longList: RaspArrival[], subList: RaspArrival[]) {
   return [...longList, ...subList].sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
+/** Nearest arrival in interval: soonest upcoming, else earliest in bucket. */
+function pickNearestArrival(list: RaspArrival[], now: Date): RaspArrival | null {
+  if (list.length === 0) return null;
+  const upcoming = list.find((a) => a.at.getTime() >= now.getTime() - 2 * 60 * 1000);
+  return upcoming ?? list[0] ?? null;
+}
+
+/**
+ * For stations: prefer nearest long-distance train; fallback to any arrival.
+ */
+function pickNearestStationArrival(
+  longList: RaspArrival[],
+  subList: RaspArrival[],
+  now: Date,
+): RaspArrival | null {
+  return pickNearestArrival(longList, now) ?? pickNearestArrival(subList, now);
+}
+
 function pickStationAdvice(
   hours: StationHourStats[],
   hourOrder: number[],
@@ -107,12 +127,14 @@ async function loadAirport(
 
   all = dedupe(all);
   const byHour = bucketByHour(all, hours);
-  // Оценка: нет реальных данных о занятости рейсов у Яндекса
   const pax = loc.paxPerFlight ?? 150;
   const hourStats: AirportHourStats[] = hours.map((hour) => {
     const list = byHour.get(hour) ?? [];
     const flights = list.length;
-    const { exitWindow, arriveBy } = airportExitForLandingHour(hour);
+    const nearest = pickNearestArrival(list, now);
+    const { exitWindow, arriveBy } = nearest
+      ? airportExitForLandingAt(nearest.at)
+      : airportExitForLandingHour(hour);
     return {
       hour,
       hourLabel: formatHour(hour),
@@ -205,7 +227,10 @@ async function loadStation(
     const subList = subByHour.get(hour) ?? [];
     const longDistance = longList.length;
     const suburban = subList.length;
-    const { exitWindow, arriveBy } = stationExitForArrivalHour(hour);
+    const nearest = pickNearestStationArrival(longList, subList, now);
+    const { exitWindow, arriveBy } = nearest
+      ? stationExitForArrivalAt(nearest.at)
+      : stationExitForArrivalHour(hour);
     return {
       hour,
       hourLabel: formatHour(hour),

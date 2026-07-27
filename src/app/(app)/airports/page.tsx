@@ -43,9 +43,6 @@ export default function AirportsPage() {
       <AppHeader onRefresh={() => void load(true)} refreshing={refreshing} />
       <main className="px-4 pb-6 pt-4">
         <h1 className="text-3xl font-extrabold text-white">Аэропорты</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Прилёт → выход через ~30–75 мин · когда подъехать
-        </p>
 
         <div className="mt-4 rounded-2xl border border-[var(--gold)]/40 bg-[var(--card)] px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -57,9 +54,6 @@ export default function AirportsPage() {
               Изменить
             </a>
           </div>
-          <p className="mt-2 text-[11px] text-[var(--muted)]">
-            этот же город используется для подсказок по потоку
-          </p>
         </div>
 
         {data?.tip && (
@@ -97,14 +91,7 @@ export default function AirportsPage() {
           ))}
         </div>
 
-        {data && (
-          <>
-            <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-              Прилёты — актуальные данные; обновление по кнопке «Обновить»
-            </p>
-            <DataAttribution />
-          </>
-        )}
+        {data && <DataAttribution />}
       </main>
     </>
   );

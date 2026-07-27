@@ -14,9 +14,7 @@ export function AirportCard({ airport }: { airport: AirportCardData }) {
       <div className="flex items-start justify-between gap-3 px-4 pt-4">
         <div>
           <h3 className="text-lg font-bold text-white">{airport.name}</h3>
-          <p className="mt-0.5 text-xs text-[var(--muted)]">
-            {airport.code} · после посадки выход через ~30–75 мин
-          </p>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">{airport.code}</p>
         </div>
         {airport.peak && (
           <span className="rounded-md bg-[#5c1218] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#ff6b6b]">
@@ -27,9 +25,6 @@ export function AirportCard({ airport }: { airport: AirportCardData }) {
 
       <div className="mt-3 flex items-end justify-between gap-3 px-4">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-[var(--muted)]">
-            Прилёт {airport.hours[0]?.hourLabel ?? "—"}
-          </p>
           <p className="text-3xl font-bold tabular-nums text-white">
             {airport.nowFlights}{" "}
             <span className="text-base font-medium text-[var(--muted)]">рейсов</span>
@@ -43,10 +38,7 @@ export function AirportCard({ airport }: { airport: AirportCardData }) {
       </div>
 
       <div className="mt-4 px-4 pb-4">
-        <p className="mb-2 text-xs font-medium text-[var(--muted)]">
-          Прогноз 12ч · нажмите интервал для расписания
-        </p>
-        <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="ypp-scroll flex gap-2 overflow-x-auto pb-2">
           {airport.hours.map((h, i) => {
             const active = openHour === h.hour;
             return (

@@ -95,7 +95,7 @@ export function IntervalSchedule({
       {filtered.length === 0 ? (
         <p className="py-2 text-center text-sm text-[var(--muted)]">{emptyText}</p>
       ) : (
-        <ul className="max-h-64 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
+        <ul className="ypp-scroll max-h-64 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
           {filtered.map((item) => {
             const st = statusLabel(item.status);
             const term = displayTerminal(item.terminal);

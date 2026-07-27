@@ -35,9 +35,35 @@ export function formatRange(fromMin: number, toMin: number): string {
   return `${formatClock(fromMin)}–${formatClock(toMin)}`;
 }
 
+/** Minutes since midnight in Europe/Moscow. */
+export function moscowMinutesOfDay(d: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
 /**
- * Airport: plane lands at hour H → passengers exit ~+30…+75 min.
- * Example: 16:00 → выход 16:30–17:15, подъехать к 16:30.
+ * Airport: passengers exit ~+30…+75 min after landing.
+ * Based on concrete landing time, not the hour label.
+ */
+export function airportExitForLandingAt(at: Date) {
+  const land = moscowMinutesOfDay(at);
+  const exitFrom = land + 30;
+  const exitTo = land + 75;
+  return {
+    exitWindow: formatRange(exitFrom, exitTo),
+    arriveBy: formatClock(exitFrom),
+  };
+}
+
+/**
+ * Airport fallback when no flights in the hour bucket.
  */
 export function airportExitForLandingHour(hour: number) {
   const land = hour * 60;
@@ -50,8 +76,20 @@ export function airportExitForLandingHour(hour: number) {
 }
 
 /**
- * Station: train arrives at hour H → exit starts in 10–15 min, lasts ~30 min.
- * Example: 16:00 → выход 16:10–16:45, подъехать к 16:10.
+ * Station: exit starts ~+10 min, lasts ~30 min after arrival.
+ */
+export function stationExitForArrivalAt(at: Date) {
+  const arrive = moscowMinutesOfDay(at);
+  const exitFrom = arrive + 10;
+  const exitTo = arrive + 45;
+  return {
+    exitWindow: formatRange(exitFrom, exitTo),
+    arriveBy: formatClock(exitFrom),
+  };
+}
+
+/**
+ * Station fallback when no arrivals in the hour bucket.
  */
 export function stationExitForArrivalHour(hour: number) {
   const arrive = hour * 60;

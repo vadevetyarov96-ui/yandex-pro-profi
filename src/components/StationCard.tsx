@@ -18,8 +18,6 @@ export function StationCard({ station }: { station: StationCardData }) {
             {first
               ? `${first.longDistance} дальних · +${first.suburban} электричек`
               : "нет данных"}
-            {" · "}
-            выход через 10–15 мин, ~30 мин
           </p>
           {station.tipArrive && station.tipExit && (
             <p className="mt-1 text-sm text-[var(--gold)]">
@@ -44,10 +42,7 @@ export function StationCard({ station }: { station: StationCardData }) {
       </div>
 
       <div className="mt-4 px-4 pb-4">
-        <p className="mb-2 text-xs font-medium text-[var(--muted)]">
-          По часам · нажмите интервал для расписания
-        </p>
-        <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="ypp-scroll flex gap-2 overflow-x-auto pb-2">
           {station.hours.map((h, i) => {
             const active = openHour === h.hour;
             return (

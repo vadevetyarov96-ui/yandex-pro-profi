@@ -35,9 +35,6 @@ export default function StationsPage() {
       <AppHeader showRefresh={false} />
       <main className="px-4 pb-6 pt-4">
         <h1 className="text-3xl font-extrabold text-white">Вокзалы</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Прибытие → выход через 10–15 мин, около получаса
-        </p>
 
         <div className="mt-4 rounded-2xl border border-[var(--gold)]/40 bg-[var(--card)] px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -85,9 +82,6 @@ export default function StationsPage() {
 
         <div className="mt-5">
           <h2 className="text-base font-semibold text-white">Вокзалы по часам</h2>
-          <p className="mt-0.5 text-xs text-[var(--muted)]">
-            {data ? `${data.stations.length} из ${data.stations.length}` : "—"} · расписание на сутки
-          </p>
         </div>
 
         {loading && (
@@ -103,14 +97,7 @@ export default function StationsPage() {
           ))}
         </div>
 
-        {data && (
-          <>
-            <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-              Поезда дальнего следования — на сутки
-            </p>
-            <DataAttribution note={data.suburbanNote} />
-          </>
-        )}
+        {data && <DataAttribution note={data.suburbanNote} />}
       </main>
     </>
   );
