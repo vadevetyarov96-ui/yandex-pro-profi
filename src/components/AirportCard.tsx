@@ -6,7 +6,7 @@ import { formatPassengers } from "@/lib/schedule-utils";
 import type { AirportCardData } from "@/lib/types";
 
 export function AirportCard({ airport }: { airport: AirportCardData }) {
-  const [openHour, setOpenHour] = useState<number | null>(airport.hours[0]?.hour ?? null);
+  const [openHour, setOpenHour] = useState<number | null>(null);
   const selected = airport.hours.find((h) => h.hour === openHour) ?? null;
 
   return (

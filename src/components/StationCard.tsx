@@ -6,7 +6,7 @@ import type { StationCardData } from "@/lib/types";
 
 export function StationCard({ station }: { station: StationCardData }) {
   const first = station.hours[0];
-  const [openHour, setOpenHour] = useState<number | null>(first?.hour ?? null);
+  const [openHour, setOpenHour] = useState<number | null>(null);
   const selected = station.hours.find((h) => h.hour === openHour) ?? null;
 
   return (
