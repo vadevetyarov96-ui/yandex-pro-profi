@@ -1,6 +1,8 @@
 import {
+  adviceInstant,
   airportExitForLandingHour,
   formatHour,
+  isFutureAdvice,
   moscowDateKey,
   moscowHour,
   moscowNow,
@@ -59,7 +61,42 @@ function dedupe(arrivals: RaspArrival[]) {
   });
 }
 
-async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promise<AirportCardData> {
+/** Sort: long-distance trains first, then suburban; within group by time. */
+function sortStationItems(longList: RaspArrival[], subList: RaspArrival[]) {
+  return [...longList, ...subList].sort((a, b) => {
+    const rank = (t: RaspArrival) => (t.transportType === "train" ? 0 : 1);
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
+    return a.at.getTime() - b.at.getTime();
+  });
+}
+
+function pickStationAdvice(
+  hours: StationHourStats[],
+  hourOrder: number[],
+  now: Date,
+): { tipArrive?: string; tipExit?: string } {
+  for (const h of hours) {
+    if (
+      h.longDistance > 0 &&
+      isFutureAdvice(h.arriveBy, h.hour, hourOrder, now)
+    ) {
+      return { tipArrive: h.arriveBy, tipExit: h.exitWindow };
+    }
+  }
+  for (const h of hours) {
+    if (isFutureAdvice(h.arriveBy, h.hour, hourOrder, now)) {
+      return { tipArrive: h.arriveBy, tipExit: h.exitWindow };
+    }
+  }
+  return {};
+}
+
+async function loadAirport(
+  loc: RaspLocation,
+  hours: number[],
+  now: Date,
+): Promise<AirportCardData> {
   const { from, to, dateKey, toDateKey } = windowBounds(hours, now);
   const first = await fetchArrivals(loc, "plane", dateKey);
   let all = first.arrivals.filter((a) => a.at >= from && a.at <= to);
@@ -75,6 +112,7 @@ async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promi
 
   all = dedupe(all);
   const byHour = bucketByHour(all, hours);
+  // Оценка: нет реальных данных о занятости рейсов у Яндекса
   const pax = loc.paxPerFlight ?? 150;
   const hourStats: AirportHourStats[] = hours.map((hour) => {
     const list = byHour.get(hour) ?? [];
@@ -93,6 +131,16 @@ async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promi
   });
 
   const nowBucket = hourStats[0];
+  let tipArrive = nowBucket?.arriveBy;
+  let tipExit = nowBucket?.exitWindow;
+  for (const h of hourStats) {
+    if (h.flights > 0 && isFutureAdvice(h.arriveBy, h.hour, hours, now)) {
+      tipArrive = h.arriveBy;
+      tipExit = h.exitWindow;
+      break;
+    }
+  }
+
   return {
     id: loc.id,
     name: loc.name,
@@ -100,12 +148,16 @@ async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promi
     hours: hourStats,
     nowFlights: nowBucket?.flights ?? 0,
     peak: hourStats.some((h) => h.isPeak),
-    tipArrive: nowBucket?.arriveBy,
-    tipExit: nowBucket?.exitWindow,
+    tipArrive,
+    tipExit,
   };
 }
 
-async function loadStation(loc: RaspLocation, hours: number[], now: Date): Promise<StationCardData> {
+async function loadStation(
+  loc: RaspLocation,
+  hours: number[],
+  now: Date,
+): Promise<StationCardData> {
   const { from, to, dateKey, toDateKey } = windowBounds(hours, now);
   const trains = await fetchArrivals(loc, "train", dateKey);
   let trainList = trains.arrivals.filter((a) => a.at >= from && a.at <= to);
@@ -159,9 +211,6 @@ async function loadStation(loc: RaspLocation, hours: number[], now: Date): Promi
     const longDistance = longList.length;
     const suburban = subList.length;
     const { exitWindow, arriveBy } = stationExitForArrivalHour(hour);
-    const items = [...longList, ...subList]
-      .sort((a, b) => a.at.getTime() - b.at.getTime())
-      .map(toScheduleItemDto);
     return {
       hour,
       hourLabel: formatHour(hour),
@@ -171,19 +220,20 @@ async function loadStation(loc: RaspLocation, hours: number[], now: Date): Promi
       exitWindow,
       arriveBy,
       isPeak: longDistance >= 3,
-      items,
+      items: sortStationItems(longList, subList).map(toScheduleItemDto),
     };
   });
 
-  const first = hourStats[0];
+  const advice = pickStationAdvice(hourStats, hours, now);
+
   return {
     id: loc.id,
     name: loc.name,
     hours: hourStats,
     longDistanceTotal: hourStats.reduce((s, h) => s + h.longDistance, 0),
     suburbanTotal: hourStats.reduce((s, h) => s + h.suburban, 0),
-    tipArrive: first?.arriveBy,
-    tipExit: first?.exitWindow,
+    tipArrive: advice.tipArrive,
+    tipExit: advice.tipExit,
   };
 }
 
@@ -227,15 +277,28 @@ export async function getAirportsSchedule(cityId: CityId): Promise<AirportsPaylo
 
   const airports = await Promise.all(locs.map((loc) => loadAirport(loc, hours, now)));
 
-  const top = [...airports].sort((a, b) => b.nowFlights - a.nowFlights)[0];
-  const tip = top?.hours[0]
-    ? {
-        airport: top.name,
-        arriveBy: top.hours[0].arriveBy,
-        exitWindow: top.hours[0].exitWindow,
-        passengers: top.hours[0].passengers,
+  // Совет: только будущие окна выхода, максимум по оценке пассажиров
+  let tip: AirportsPayload["tip"] = null;
+  let bestScore = -1;
+  for (const a of airports) {
+    for (const h of a.hours) {
+      if (h.flights <= 0) continue;
+      if (!isFutureAdvice(h.arriveBy, h.hour, hours, now)) continue;
+      const when = adviceInstant(h.arriveBy, h.hour, hours, now).getTime();
+      // Prefer higher passenger estimate; slight preference for sooner slots
+      const soonBonus = Math.max(0, 1 - (when - now.getTime()) / (12 * 60 * 60 * 1000));
+      const score = h.passengers + soonBonus * 200;
+      if (score > bestScore) {
+        bestScore = score;
+        tip = {
+          airport: a.name,
+          arriveBy: h.arriveBy,
+          exitWindow: h.exitWindow,
+          passengers: h.passengers,
+        };
       }
-    : null;
+    }
+  }
 
   return {
     updatedAt: now.toISOString(),
@@ -253,18 +316,26 @@ export async function getStationsSchedule(cityId: CityId): Promise<StationsPaylo
 
   const stations = await Promise.all(locs.map((loc) => loadStation(loc, hours, now)));
 
+  // Совет: приоритет дальним поездам, только будущие окна
   let tip: StationsPayload["tip"] = null;
-  let best = 0;
+  let bestScore = -1;
   for (const s of stations) {
-    const h = s.hours[0];
-    if (h && h.longDistance > best) {
-      best = h.longDistance;
-      tip = {
-        station: s.name,
-        arriveBy: h.arriveBy,
-        exitWindow: h.exitWindow,
-        longDistance: h.longDistance,
-      };
+    for (const h of s.hours) {
+      if (h.longDistance <= 0) continue;
+      if (!isFutureAdvice(h.arriveBy, h.hour, hours, now)) continue;
+      const when = adviceInstant(h.arriveBy, h.hour, hours, now).getTime();
+      const soonBonus = Math.max(0, 1 - (when - now.getTime()) / (12 * 60 * 60 * 1000));
+      // Long-distance dominates; suburban does not affect tip
+      const score = h.longDistance * 100 + soonBonus * 10;
+      if (score > bestScore) {
+        bestScore = score;
+        tip = {
+          station: s.name,
+          arriveBy: h.arriveBy,
+          exitWindow: h.exitWindow,
+          longDistance: h.longDistance,
+        };
+      }
     }
   }
 

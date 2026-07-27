@@ -70,6 +70,7 @@ export function AirportCard({ airport }: { airport: AirportCardData }) {
                 <span className="text-[10px] text-[var(--gold)]">
                   {formatPassengers(h.passengers)}
                 </span>
+                <span className="text-[9px] text-[var(--muted)]">оценка</span>
                 <span className="mt-1.5 text-center text-[9px] leading-tight text-[var(--green)]">
                   выход
                   <br />

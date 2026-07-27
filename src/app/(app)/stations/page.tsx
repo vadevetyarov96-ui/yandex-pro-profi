@@ -75,9 +75,9 @@ export default function StationsPage() {
               </div>
               <div className="rounded-xl border border-[var(--border)] bg-[var(--card-2)] px-3 py-2 text-center">
                 <p className="text-lg font-bold text-white">
-                  {data.stations.reduce((s, x) => s + (x.hours[0]?.longDistance ?? 0), 0)}
+                  {data.tip?.longDistance ?? 0}
                 </p>
-                <p className="text-[11px] text-[var(--muted)]">Дальние сейчас</p>
+                <p className="text-[11px] text-[var(--muted)]">Дальние в совете</p>
               </div>
             </div>
           </div>

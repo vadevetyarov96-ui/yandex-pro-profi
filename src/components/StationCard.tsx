@@ -21,9 +21,9 @@ export function StationCard({ station }: { station: StationCardData }) {
             {" · "}
             выход через 10–15 мин, ~30 мин
           </p>
-          {first && (
+          {station.tipArrive && station.tipExit && (
             <p className="mt-1 text-sm text-[var(--gold)]">
-              подъехать к {first.arriveBy} · выход {first.exitWindow}
+              подъехать к {station.tipArrive} · выход {station.tipExit}
             </p>
           )}
         </div>

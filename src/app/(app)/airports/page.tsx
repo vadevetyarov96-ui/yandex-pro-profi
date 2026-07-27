@@ -71,6 +71,7 @@ export default function AirportsPage() {
               </p>
               <p className="mt-0.5 text-sm text-[var(--green)]">
                 выход {data.tip.exitWindow} · {formatPassengers(data.tip.passengers)} пасс.
+                <span className="text-[var(--muted)]"> (оценка)</span>
               </p>
             </div>
             <button

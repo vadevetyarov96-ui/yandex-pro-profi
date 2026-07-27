@@ -107,3 +107,38 @@ export function moscowWallTime(
 export function moscowNow(): Date {
   return new Date();
 }
+
+/** Day offset inside an upcomingHours() sequence (handles midnight wrap). */
+export function hourDayOffset(hours: number[], hour: number): number {
+  const idx = hours.indexOf(hour);
+  if (idx < 0) return 0;
+  let dayOffset = 0;
+  for (let i = 1; i <= idx; i++) {
+    if (hours[i]! < hours[i - 1]!) dayOffset++;
+  }
+  return dayOffset;
+}
+
+/** Instant for "HH:MM" advice relative to upcoming hour buckets. */
+export function adviceInstant(
+  arriveBy: string,
+  hour: number,
+  hours: number[],
+  now: Date = moscowNow(),
+): Date {
+  const [ah, am] = arriveBy.split(":").map((x) => Number(x));
+  const dayOffset = hourDayOffset(hours, hour);
+  const todayKey = moscowDateKey(now);
+  const base = moscowWallTime(todayKey, ah || 0, am || 0).getTime();
+  return new Date(base + dayOffset * 24 * 60 * 60 * 1000);
+}
+
+export function isFutureAdvice(
+  arriveBy: string,
+  hour: number,
+  hours: number[],
+  now: Date = moscowNow(),
+  bufferMs = 2 * 60 * 1000,
+): boolean {
+  return adviceInstant(arriveBy, hour, hours, now).getTime() > now.getTime() + bufferMs;
+}
