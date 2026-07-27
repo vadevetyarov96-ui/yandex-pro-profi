@@ -5,6 +5,17 @@ export interface City {
   name: string;
 }
 
+export interface ScheduleItem {
+  id: string;
+  time: string;
+  number: string;
+  from?: string;
+  title?: string;
+  terminal?: string;
+  status?: string;
+  kind: "plane" | "train" | "suburban";
+}
+
 export interface HourBucket {
   /** Час прибытия транспорта, напр. "16:00" */
   hourLabel: string;
@@ -19,6 +30,7 @@ export interface AirportHourStats extends HourBucket {
   exitWindow: string;
   /** К какому времени подъехать водителю */
   arriveBy: string;
+  items: ScheduleItem[];
 }
 
 export interface AirportCardData {
@@ -40,6 +52,7 @@ export interface StationHourStats extends HourBucket {
   exitWindow: string;
   /** К какому времени подъехать водителю */
   arriveBy: string;
+  items: ScheduleItem[];
 }
 
 export interface StationCardData {

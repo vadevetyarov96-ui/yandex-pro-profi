@@ -17,19 +17,18 @@ import type {
   StationHourStats,
   StationsPayload,
 } from "@/lib/types";
-import { fetchArrivals, type RaspArrival } from "./client";
+import { fetchArrivals, toScheduleItemDto, type RaspArrival } from "./client";
 import { locationsForCity, type RaspLocation } from "./locations";
-
-function hourInMoscow(d: Date): number {
-  return moscowHour(d);
-}
 
 function bucketByHour(arrivals: RaspArrival[], hours: number[]): Map<number, RaspArrival[]> {
   const map = new Map<number, RaspArrival[]>();
   for (const h of hours) map.set(h, []);
   for (const a of arrivals) {
-    const h = hourInMoscow(a.at);
+    const h = moscowHour(a.at);
     if (map.has(h)) map.get(h)!.push(a);
+  }
+  for (const list of map.values()) {
+    list.sort((x, y) => x.at.getTime() - y.at.getTime());
   }
   return map;
 }
@@ -39,18 +38,25 @@ function windowBounds(hours: number[], now: Date) {
   const first = hours[0] ?? moscowHour(now);
   const last = hours[hours.length - 1] ?? first;
   let from = moscowWallTime(dateKey, first, 0, 0);
-  // pad 30 min for delayed edge cases
   from = new Date(from.getTime() - 30 * 60 * 1000);
 
   let toDateKey = dateKey;
   if (last < first) {
-    const d = new Date(now);
-    // next calendar day in Moscow
     const tomorrow = new Date(moscowWallTime(dateKey, 12, 0, 0).getTime() + 24 * 60 * 60 * 1000);
     toDateKey = moscowDateKey(tomorrow);
   }
   const to = moscowWallTime(toDateKey, last, 59, 59);
   return { from, to, dateKey, toDateKey };
+}
+
+function dedupe(arrivals: RaspArrival[]) {
+  const seen = new Set<string>();
+  return arrivals.filter((a) => {
+    const key = `${a.number}|${a.at.toISOString()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promise<AirportCardData> {
@@ -67,15 +73,7 @@ async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promi
     }
   }
 
-  // Deduplicate by flight number + hour
-  const seen = new Set<string>();
-  all = all.filter((a) => {
-    const key = `${a.number}|${a.at.toISOString()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
+  all = dedupe(all);
   const byHour = bucketByHour(all, hours);
   const pax = loc.paxPerFlight ?? 150;
   const hourStats: AirportHourStats[] = hours.map((hour) => {
@@ -90,6 +88,7 @@ async function loadAirport(loc: RaspLocation, hours: number[], now: Date): Promi
       exitWindow,
       arriveBy,
       isPeak: flights >= 8,
+      items: list.map(toScheduleItemDto),
     };
   });
 
@@ -126,6 +125,17 @@ async function loadStation(loc: RaspLocation, hours: number[], now: Date): Promi
   try {
     const suburban = await fetchArrivals(loc, "suburban", dateKey);
     suburbanArrivals = suburban.arrivals.filter((a) => a.at >= from && a.at <= to);
+    if (toDateKey !== dateKey) {
+      try {
+        const next = await fetchArrivals(loc, "suburban", toDateKey);
+        suburbanArrivals = [
+          ...suburbanArrivals,
+          ...next.arrivals.filter((a) => a.at >= from && a.at <= to),
+        ];
+      } catch {
+        /* ignore */
+      }
+    }
     if (suburbanArrivals.length === 0 && suburban.source === "page") {
       suburbanEstimated = true;
     }
@@ -137,13 +147,21 @@ async function loadStation(loc: RaspLocation, hours: number[], now: Date): Promi
     suburbanArrivals = synthesizeSuburban(loc.id, hours, now);
   }
 
+  trainList = dedupe(trainList);
+  suburbanArrivals = dedupe(suburbanArrivals);
+
   const trainsByHour = bucketByHour(trainList, hours);
   const subByHour = bucketByHour(suburbanArrivals, hours);
 
   const hourStats: StationHourStats[] = hours.map((hour) => {
-    const longDistance = (trainsByHour.get(hour) ?? []).length;
-    const suburban = (subByHour.get(hour) ?? []).length;
+    const longList = trainsByHour.get(hour) ?? [];
+    const subList = subByHour.get(hour) ?? [];
+    const longDistance = longList.length;
+    const suburban = subList.length;
     const { exitWindow, arriveBy } = stationExitForArrivalHour(hour);
+    const items = [...longList, ...subList]
+      .sort((a, b) => a.at.getTime() - b.at.getTime())
+      .map(toScheduleItemDto);
     return {
       hour,
       hourLabel: formatHour(hour),
@@ -153,6 +171,7 @@ async function loadStation(loc: RaspLocation, hours: number[], now: Date): Promi
       exitWindow,
       arriveBy,
       isPeak: longDistance >= 3,
+      items,
     };
   });
 
@@ -194,6 +213,7 @@ function synthesizeSuburban(stationId: string, hours: number[], now: Date): Rasp
         at,
         scheduledAt: at,
         status: "estimated",
+        from: "пригород",
       });
     }
   }

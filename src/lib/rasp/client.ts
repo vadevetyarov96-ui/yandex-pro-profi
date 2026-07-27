@@ -8,6 +8,20 @@ export interface RaspArrival {
   scheduledAt: Date;
   status?: string;
   terminal?: string;
+  /** Откуда / маршрут */
+  from?: string;
+  title?: string;
+}
+
+export interface ScheduleItemDto {
+  id: string;
+  time: string;
+  number: string;
+  from?: string;
+  title?: string;
+  terminal?: string;
+  status?: string;
+  kind: RaspTransport;
 }
 
 interface PageThread {
@@ -21,6 +35,7 @@ interface PageThread {
   };
   terminalName?: string;
   isSupplement?: boolean;
+  routeStations?: Array<{ title?: string; settlement?: string; iataCode?: string }>;
 }
 
 const UA =
@@ -64,7 +79,6 @@ function effectiveAt(thread: PageThread): { at: Date; scheduledAt: Date; status?
   if (actualRaw) {
     const actual = new Date(actualRaw);
     if (!Number.isNaN(actual.getTime())) {
-      // Use live ETA / actual for delayed, estimated, landed, etc.
       if (st && st !== "scheduled") at = actual;
     }
   }
@@ -75,6 +89,12 @@ function effectiveAt(thread: PageThread): { at: Date; scheduledAt: Date; status?
 function mapTransport(t?: string): RaspTransport | null {
   if (t === "plane" || t === "train" || t === "suburban") return t;
   return null;
+}
+
+function fromLabel(thread: PageThread): string | undefined {
+  const first = thread.routeStations?.[0];
+  if (!first) return undefined;
+  return first.settlement || first.title;
 }
 
 /** Public station page (no API key). Good for plane + long-distance train. */
@@ -113,6 +133,7 @@ export async function fetchArrivalsFromPage(
       scheduledAt: times.scheduledAt,
       status: times.status,
       terminal: thread.status?.actualTerminalName ?? thread.terminalName,
+      from: fromLabel(thread),
     });
   }
 
@@ -124,12 +145,15 @@ interface ApiScheduleItem {
   departure?: string;
   thread?: {
     number?: string;
+    title?: string;
+    short_title?: string;
     transport_type?: string;
   };
   terminal?: string | null;
+  platform?: string | null;
 }
 
-/** Official API (requires YANDEX_RASP_API_KEY). Needed for suburban reliably. */
+/** Official API (requires YANDEX_RASP_API_KEY). */
 export async function fetchArrivalsFromApi(
   stationCode: string,
   transport: RaspTransport,
@@ -138,41 +162,63 @@ export async function fetchArrivalsFromApi(
   const key = process.env.YANDEX_RASP_API_KEY;
   if (!key) throw new Error("YANDEX_RASP_API_KEY is not set");
 
-  const params = new URLSearchParams({
-    apikey: key,
-    station: stationCode,
-    lang: "ru_RU",
-    format: "json",
-    date,
-    event: "arrival",
-    transport_types: transport,
-  });
-
-  const url = `https://api.rasp.yandex.net/v3.0/schedule/?${params}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Yandex Rasp API HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as { schedule?: ApiScheduleItem[] };
   const out: RaspArrival[] = [];
+  let offset = 0;
+  const limit = 100;
 
-  for (const item of data.schedule ?? []) {
-    const raw = item.arrival;
-    if (!raw) continue;
-    const at = new Date(raw);
-    if (Number.isNaN(at.getTime())) continue;
-    const transportType = mapTransport(item.thread?.transport_type) ?? transport;
-    out.push({
-      number: item.thread?.number ?? "—",
-      transportType,
-      at,
-      scheduledAt: at,
-      terminal: item.terminal ?? undefined,
+  for (let page = 0; page < 5; page++) {
+    const params = new URLSearchParams({
+      apikey: key,
+      station: stationCode,
+      lang: "ru_RU",
+      format: "json",
+      date,
+      event: "arrival",
+      transport_types: transport,
+      limit: String(limit),
+      offset: String(offset),
     });
+
+    const url = `https://api.rasp.yandex.net/v3.0/schedule/?${params}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Yandex Rasp API HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as {
+      schedule?: ApiScheduleItem[];
+      pagination?: { total?: number };
+    };
+    const batch = data.schedule ?? [];
+    for (const item of batch) {
+      const raw = item.arrival;
+      if (!raw) continue;
+      const at = new Date(raw);
+      if (Number.isNaN(at.getTime())) continue;
+      const transportType = mapTransport(item.thread?.transport_type) ?? transport;
+      const title = item.thread?.short_title || item.thread?.title;
+      const from = title?.includes(" — ")
+        ? title.split(" — ")[0]
+        : title?.includes(" - ")
+          ? title.split(" - ")[0]
+          : undefined;
+      out.push({
+        number: item.thread?.number ?? "—",
+        transportType,
+        at,
+        scheduledAt: at,
+        terminal: item.terminal ?? item.platform ?? undefined,
+        title,
+        from,
+      });
+    }
+
+    offset += batch.length;
+    const total = data.pagination?.total ?? offset;
+    if (batch.length < limit || offset >= total) break;
   }
 
   return out;
@@ -192,7 +238,6 @@ export async function fetchArrivals(
     }
   }
 
-  // Public page covers plane + train well; suburban usually needs API.
   const arrivals = await fetchArrivalsFromPage(location.raspId, {
     transport: transport === "suburban" ? undefined : transport,
   });
@@ -202,4 +247,23 @@ export async function fetchArrivals(
       : arrivals.filter((a) => a.transportType === transport);
 
   return { arrivals: filtered, source: "page" };
+}
+
+export function toScheduleItemDto(a: RaspArrival): ScheduleItemDto {
+  const time = a.at.toLocaleTimeString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return {
+    id: `${a.number}-${a.at.toISOString()}`,
+    time,
+    number: a.number,
+    from: a.from,
+    title: a.title,
+    terminal: a.terminal,
+    status: a.status,
+    kind: a.transportType,
+  };
 }
