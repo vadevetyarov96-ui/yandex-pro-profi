@@ -18,11 +18,12 @@ export default function AirportsPage() {
     else setLoading(true);
     setError("");
     try {
-      const url = refresh
-        ? `/api/airports?refresh=${Date.now()}`
-        : "/api/airports?refresh=boot";
+      const url = refresh ? `/api/airports?refresh=${Date.now()}` : "/api/airports";
       const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error("Не удалось загрузить прилёты");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Не удалось загрузить прилёты");
+      }
       const json = (await res.json()) as AirportsPayload;
       setData(json);
     } catch (e) {

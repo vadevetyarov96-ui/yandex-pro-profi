@@ -89,6 +89,7 @@ export function AirportCard({ airport }: { airport: AirportCardData }) {
             exitWindow={selected.exitWindow}
             items={selected.items}
             emptyText="В этом часе прилётов нет"
+            terminalFilter
           />
         )}
       </div>

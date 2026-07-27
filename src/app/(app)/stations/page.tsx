@@ -9,12 +9,10 @@ import type { StationsPayload } from "@/lib/types";
 export default function StationsPage() {
   const [data, setData] = useState<StationsPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+  const load = useCallback(async () => {
+    setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/stations", { cache: "no-store" });
@@ -25,17 +23,16 @@ export default function StationsPage() {
       setError(e instanceof Error ? e.message : "Ошибка");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    void load(false);
+    void load();
   }, [load]);
 
   return (
     <>
-      <AppHeader onRefresh={() => void load(true)} refreshing={refreshing} />
+      <AppHeader showRefresh={false} />
       <main className="px-4 pb-6 pt-4">
         <h1 className="text-3xl font-extrabold text-white">Вокзалы</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">

@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { cacheGet, cacheSet } from "@/lib/cache";
-import { getStationsSchedule } from "@/lib/stations";
-import { moscowDateKey } from "@/lib/schedule-utils";
-import type { StationsPayload } from "@/lib/types";
+import { getSharedStations } from "@/lib/shared-cache";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,16 +11,9 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const day = moscowDateKey();
-  const cacheKey = `stations:${session.cityId}:${day}`;
-  const cached = cacheGet<StationsPayload>(cacheKey);
-  if (cached) return NextResponse.json(cached);
-
   try {
-    const data = await getStationsSchedule(session.cityId);
-    // Trains stable — cache until end of day (~24h)
-    cacheSet(cacheKey, data, 24 * 60 * 60 * 1000);
-    return NextResponse.json(data);
+    const data = await getSharedStations(session.cityId);
+    return NextResponse.json({ ...data, cache: "daily" });
   } catch (e) {
     console.error(e);
     return NextResponse.json(

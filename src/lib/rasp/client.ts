@@ -91,6 +91,17 @@ function mapTransport(t?: string): RaspTransport | null {
   return null;
 }
 
+function cleanTerminal(value?: string | null): string | undefined {
+  if (value == null) return undefined;
+  const s = String(value).trim();
+  if (!s) return undefined;
+  const lower = s.toLowerCase();
+  if (lower === "null" || lower === "undefined" || lower === "none" || lower === "-") {
+    return undefined;
+  }
+  return s;
+}
+
 function fromLabel(thread: PageThread): string | undefined {
   const first = thread.routeStations?.[0];
   if (!first) return undefined;
@@ -132,7 +143,7 @@ export async function fetchArrivalsFromPage(
       at: times.at,
       scheduledAt: times.scheduledAt,
       status: times.status,
-      terminal: thread.status?.actualTerminalName ?? thread.terminalName,
+      terminal: cleanTerminal(thread.status?.actualTerminalName ?? thread.terminalName),
       from: fromLabel(thread),
     });
   }
@@ -210,7 +221,7 @@ export async function fetchArrivalsFromApi(
         transportType,
         at,
         scheduledAt: at,
-        terminal: item.terminal ?? item.platform ?? undefined,
+        terminal: cleanTerminal(item.terminal ?? item.platform),
         title,
         from,
       });
@@ -262,7 +273,7 @@ export function toScheduleItemDto(a: RaspArrival): ScheduleItemDto {
     number: a.number,
     from: a.from,
     title: a.title,
-    terminal: a.terminal,
+    terminal: cleanTerminal(a.terminal),
     status: a.status,
     kind: a.transportType,
   };
