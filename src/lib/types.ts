@@ -61,6 +61,8 @@ export interface StationCardData {
   hours: StationHourStats[];
   longDistanceTotal: number;
   suburbanTotal: number;
+  /** Пик только если текущий интервал пиковый */
+  peak: boolean;
   tipArrive?: string;
   tipExit?: string;
 }

@@ -54,7 +54,7 @@ export async function getSharedStations(cityId: CityId): Promise<StationsPayload
 
   const cachedFn = unstable_cache(
     async () => getStationsSchedule(cityId),
-    ["stations-v3", cityId, day],
+    ["stations-v4", cityId, day],
     { revalidate: 60 * 60 * 24, tags: [`stations-${cityId}-${day}`] },
   );
 
@@ -72,7 +72,7 @@ export async function getSharedAirports(cityId: CityId): Promise<AirportsPayload
 
   const cachedFn = unstable_cache(
     async () => getAirportsSchedule(cityId),
-    ["airports-v2", cityId],
+    ["airports-v3", cityId],
     { revalidate: 60 * 60 * 12, tags: [airportsTag(cityId)] },
   );
 

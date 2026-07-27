@@ -27,12 +27,19 @@ export function StationCard({ station }: { station: StationCardData }) {
             </p>
           )}
         </div>
-        <div className="text-right">
-          <p className="text-3xl font-bold tabular-nums text-[var(--gold)]">
-            {first?.longDistance ?? 0}
-          </p>
-          <p className="text-[10px] text-[var(--muted)]">дальних</p>
-          <p className="text-[10px] text-[var(--muted)]">всего {first?.total ?? 0}</p>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {station.peak && (
+            <span className="rounded-md bg-[#5c1218] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#ff6b6b]">
+              Пик
+            </span>
+          )}
+          <div className="text-right">
+            <p className="text-3xl font-bold tabular-nums text-[var(--gold)]">
+              {first?.longDistance ?? 0}
+            </p>
+            <p className="text-[10px] text-[var(--muted)]">дальних</p>
+            <p className="text-[10px] text-[var(--muted)]">всего {first?.total ?? 0}</p>
+          </div>
         </div>
       </div>
 

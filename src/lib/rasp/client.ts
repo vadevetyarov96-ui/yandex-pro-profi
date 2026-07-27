@@ -1,4 +1,5 @@
 import type { RaspTransport } from "./locations";
+import { moscowDateKey } from "@/lib/schedule-utils";
 
 export interface RaspArrival {
   number: string;
@@ -40,6 +41,54 @@ interface PageThread {
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+type KeyState = { day: string; exhausted: Set<string> };
+
+const g = globalThis as typeof globalThis & {
+  __yppRaspKeyState?: KeyState;
+};
+
+function keyState(): KeyState {
+  const day = moscowDateKey();
+  if (!g.__yppRaspKeyState || g.__yppRaspKeyState.day !== day) {
+    g.__yppRaspKeyState = { day, exhausted: new Set() };
+  }
+  return g.__yppRaspKeyState;
+}
+
+function availableApiKeys(): string[] {
+  const keys = [
+    process.env.YANDEX_RASP_API_KEY,
+    process.env.YANDEX_RASP_API_KEY_BACKUP,
+  ].filter((k): k is string => Boolean(k && k.trim()));
+  const state = keyState();
+  const usable = keys.filter((k) => !state.exhausted.has(k));
+  return usable.length > 0 ? usable : keys;
+}
+
+function markKeyExhausted(key: string) {
+  keyState().exhausted.add(key);
+}
+
+function isLimitError(status: number, body: string): boolean {
+  if (status === 429) return true;
+  const t = body.toLowerCase();
+  return (
+    t.includes("лимит") ||
+    t.includes("limit") ||
+    t.includes("quota") ||
+    t.includes("exceed") ||
+    t.includes("too many") ||
+    t.includes("rate")
+  );
+}
+
+class RaspApiLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RaspApiLimitError";
+  }
+}
 
 function parseInitialState(html: string): { station?: { threads?: PageThread[]; title?: string } } {
   const marker = "window.INITIAL_STATE = ";
@@ -164,22 +213,19 @@ interface ApiScheduleItem {
   platform?: string | null;
 }
 
-/** Official API (requires YANDEX_RASP_API_KEY). */
-export async function fetchArrivalsFromApi(
+async function fetchArrivalsFromApiWithKey(
+  apiKey: string,
   stationCode: string,
   transport: RaspTransport,
   date: string,
 ): Promise<RaspArrival[]> {
-  const key = process.env.YANDEX_RASP_API_KEY;
-  if (!key) throw new Error("YANDEX_RASP_API_KEY is not set");
-
   const out: RaspArrival[] = [];
   let offset = 0;
   const limit = 100;
 
   for (let page = 0; page < 5; page++) {
     const params = new URLSearchParams({
-      apikey: key,
+      apikey: apiKey,
       station: stationCode,
       lang: "ru_RU",
       format: "json",
@@ -195,14 +241,29 @@ export async function fetchArrivalsFromApi(
       headers: { Accept: "application/json" },
       cache: "no-store",
     });
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
+      if (isLimitError(res.status, text)) {
+        throw new RaspApiLimitError(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
       throw new Error(`Yandex Rasp API HTTP ${res.status}: ${text.slice(0, 200)}`);
     }
-    const data = (await res.json()) as {
+
+    let data: {
       schedule?: ApiScheduleItem[];
       pagination?: { total?: number };
+      error?: { text?: string };
     };
+    try {
+      data = JSON.parse(text) as typeof data;
+    } catch {
+      throw new Error(`Yandex Rasp API invalid JSON: ${text.slice(0, 200)}`);
+    }
+
+    if (data.error?.text && isLimitError(200, data.error.text)) {
+      throw new RaspApiLimitError(data.error.text);
+    }
+
     const batch = data.schedule ?? [];
     for (const item of batch) {
       const raw = item.arrival;
@@ -235,12 +296,39 @@ export async function fetchArrivalsFromApi(
   return out;
 }
 
+/** Official API with primary → backup key failover on daily limit. */
+export async function fetchArrivalsFromApi(
+  stationCode: string,
+  transport: RaspTransport,
+  date: string,
+): Promise<RaspArrival[]> {
+  const keys = availableApiKeys();
+  if (keys.length === 0) throw new Error("YANDEX_RASP_API_KEY is not set");
+
+  let lastError: Error | null = null;
+  for (const key of keys) {
+    try {
+      return await fetchArrivalsFromApiWithKey(key, stationCode, transport, date);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (e instanceof RaspApiLimitError) {
+        markKeyExhausted(key);
+        console.warn("Yandex Rasp API key limit reached, trying next key");
+        continue;
+      }
+      throw lastError;
+    }
+  }
+
+  throw lastError ?? new Error("Yandex Rasp API: all keys failed");
+}
+
 export async function fetchArrivals(
   location: { raspId: number; code: string },
   transport: RaspTransport,
   date: string,
 ): Promise<{ arrivals: RaspArrival[]; source: "api" | "page" }> {
-  if (process.env.YANDEX_RASP_API_KEY) {
+  if (process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP) {
     try {
       const arrivals = await fetchArrivalsFromApi(location.code, transport, date);
       return { arrivals, source: "api" };

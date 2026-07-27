@@ -142,7 +142,7 @@ async function loadAirport(
     code: loc.iata ?? loc.code,
     hours: hourStats,
     nowFlights: nowBucket?.flights ?? 0,
-    peak: hourStats.some((h) => h.isPeak),
+    peak: Boolean(nowBucket?.isPeak),
     tipArrive,
     tipExit,
   };
@@ -220,6 +220,7 @@ async function loadStation(
   });
 
   const advice = pickStationAdvice(hourStats, hours, now);
+  const nowBucket = hourStats[0];
 
   return {
     id: loc.id,
@@ -227,6 +228,7 @@ async function loadStation(
     hours: hourStats,
     longDistanceTotal: hourStats.reduce((s, h) => s + h.longDistance, 0),
     suburbanTotal: hourStats.reduce((s, h) => s + h.suburban, 0),
+    peak: Boolean(nowBucket?.isPeak),
     tipArrive: advice.tipArrive,
     tipExit: advice.tipExit,
   };
@@ -300,7 +302,10 @@ export async function getAirportsSchedule(cityId: CityId): Promise<AirportsPaylo
     cityId,
     airports,
     tip,
-    source: process.env.YANDEX_RASP_API_KEY ? "yandex-rasp-api" : "yandex-rasp",
+    source:
+      process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP
+        ? "yandex-rasp-api"
+        : "yandex-rasp",
   };
 }
 
@@ -334,13 +339,17 @@ export async function getStationsSchedule(cityId: CityId): Promise<StationsPaylo
     }
   }
 
+  const hasApiKey = Boolean(
+    process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP,
+  );
+
   return {
     updatedAt: now.toISOString(),
     cityId,
     stations,
     tip,
-    source: process.env.YANDEX_RASP_API_KEY ? "yandex-rasp-api" : "yandex-rasp",
-    suburbanNote: process.env.YANDEX_RASP_API_KEY
+    source: hasApiKey ? "yandex-rasp-api" : "yandex-rasp",
+    suburbanNote: hasApiKey
       ? undefined
       : "Электрички — оценка; для точных данных нужен ключ API Яндекс Расписаний",
   };
