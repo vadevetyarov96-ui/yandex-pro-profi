@@ -1,7 +1,8 @@
 import { unstable_cache, revalidateTag } from "next/cache";
+import { getCityEvents } from "@/lib/events";
 import { getAirportsSchedule, getStationsSchedule } from "@/lib/rasp/schedule";
 import { moscowDateKey } from "@/lib/schedule-utils";
-import type { AirportsPayload, CityId, StationsPayload } from "@/lib/types";
+import type { AirportsPayload, CityId, EventsPayload, StationsPayload } from "@/lib/types";
 
 type MemEntry<T> = { value: T; expiresAt: number };
 
@@ -31,6 +32,8 @@ function memSet<T>(key: string, value: T, ttlMs: number) {
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Airports stay until manual refresh; safety ceiling 12h */
 const AIRPORTS_TTL_MS = 12 * 60 * 60 * 1000;
+/** Events refresh hourly; safety ceiling 2h in memory */
+const EVENTS_TTL_MS = 2 * 60 * 60 * 1000;
 
 function stationsKey(cityId: CityId, day: string) {
   return `stations:${cityId}:${day}`;
@@ -42,6 +45,14 @@ function airportsKey(cityId: CityId) {
 
 function airportsTag(cityId: CityId) {
   return `airports-${cityId}`;
+}
+
+function eventsKey(cityId: CityId, day: string) {
+  return `events:${cityId}:${day}`;
+}
+
+function eventsTag(cityId: CityId, day: string) {
+  return `events-${cityId}-${day}`;
 }
 
 /** Shared across users via Next Data Cache + in-memory L1. Once per Moscow day. */
@@ -98,5 +109,41 @@ export async function refreshSharedAirports(cityId: CityId): Promise<AirportsPay
   // Warm Next data cache with a versioned key so subsequent getSharedAirports
   // hits memory first; also rewrite tag by calling unstable_cache after clear.
   // Next will refill on next getSharedAirports after tag invalidation.
+  return data;
+}
+
+/** Shared across users. Refreshes about once an hour per Moscow day. */
+export async function getSharedEvents(cityId: CityId): Promise<EventsPayload> {
+  const day = moscowDateKey();
+  const key = eventsKey(cityId, day);
+
+  const local = memGet<EventsPayload>(key);
+  if (local) return { ...local, source: `${local.source ?? "kudago"}+cache` };
+
+  const cachedFn = unstable_cache(
+    async () => getCityEvents(cityId),
+    ["events-v1", cityId, day],
+    { revalidate: 60 * 60, tags: [eventsTag(cityId, day)] },
+  );
+
+  const data = await cachedFn();
+  memSet(key, data, EVENTS_TTL_MS);
+  return data;
+}
+
+/** Bust shared events cache and fetch fresh. */
+export async function refreshSharedEvents(cityId: CityId): Promise<EventsPayload> {
+  const day = moscowDateKey();
+  const key = eventsKey(cityId, day);
+  mem().delete(key);
+
+  try {
+    revalidateTag(eventsTag(cityId, day), "max");
+  } catch {
+    /* ignore in non-next contexts */
+  }
+
+  const data = await getCityEvents(cityId);
+  memSet(key, data, EVENTS_TTL_MS);
   return data;
 }

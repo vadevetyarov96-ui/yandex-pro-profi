@@ -100,3 +100,47 @@ export interface StationsPayload {
   source?: string;
   suburbanNote?: string;
 }
+
+export interface CityEvent {
+  id: string;
+  title: string;
+  category: string;
+  categories: string[];
+  startTime: string | null;
+  endTime: string | null;
+  timeLabel: string;
+  /** True when the event has a concrete start time on this day */
+  isTimed: boolean;
+  placeName: string | null;
+  address: string | null;
+  subway: string | null;
+  price: string | null;
+  isFree: boolean;
+  favoritesCount: number;
+  ageRestriction: string | null;
+  siteUrl: string | null;
+  description: string | null;
+  peak?: boolean;
+}
+
+export interface EventsDayBucket {
+  dateKey: string;
+  label: string;
+  weekday: string;
+  events: CityEvent[];
+}
+
+export interface EventsPayload {
+  updatedAt: string;
+  cityId: CityId;
+  cityName: string;
+  days: EventsDayBucket[];
+  tip: {
+    title: string;
+    place: string;
+    timeLabel: string;
+    dayLabel: string;
+    subway: string | null;
+  } | null;
+  source?: string;
+}
