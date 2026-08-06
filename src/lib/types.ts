@@ -14,6 +14,8 @@ export interface ScheduleItem {
   terminal?: string;
   status?: string;
   kind: "plane" | "train" | "suburban";
+  /** Plane only: domestic (ВВЛ) vs international (МВЛ) */
+  scope?: "domestic" | "international";
 }
 
 export interface HourBucket {
@@ -26,10 +28,12 @@ export interface HourBucket {
 export interface AirportHourStats extends HourBucket {
   flights: number;
   passengers: number;
-  /** Окно выхода пассажиров, напр. "16:30–17:15" */
+  /** Окно выхода пассажиров, напр. "16:30" или "17:00–17:30" */
   exitWindow: string;
   /** К какому времени подъехать водителю */
   arriveBy: string;
+  /** Absolute ISO time for arriveBy (exit start) */
+  arriveByAt?: string;
   items: ScheduleItem[];
 }
 

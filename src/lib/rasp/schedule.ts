@@ -4,6 +4,7 @@ import {
   airportExitForLandingHour,
   formatHour,
   isFutureAdvice,
+  isFutureExit,
   moscowDateKey,
   moscowHour,
   moscowNow,
@@ -11,6 +12,7 @@ import {
   stationExitForArrivalAt,
   stationExitForArrivalHour,
   upcomingHours,
+  type AirportExitAdvice,
 } from "@/lib/schedule-utils";
 import type {
   AirportCardData,
@@ -22,6 +24,7 @@ import type {
   StationsPayload,
 } from "@/lib/types";
 import { fetchArrivals, toScheduleItemDto, type RaspArrival } from "./client";
+import type { FlightScope } from "./flight-scope";
 import { locationsForCity, type RaspLocation } from "./locations";
 
 function bucketByHour(arrivals: RaspArrival[], hours: number[]): Map<number, RaspArrival[]> {
@@ -107,6 +110,33 @@ function pickStationAdvice(
   return {};
 }
 
+/**
+ * Exit advice for a landing-hour bucket.
+ * Prefer the earliest still-future passenger wave (domestic ~+30, intl ~+60…+90)
+ * so recommendations don't skip the first exit after a mixed bank of arrivals.
+ */
+function airportExitAdviceForBucket(
+  list: RaspArrival[],
+  hour: number,
+  now: Date,
+): AirportExitAdvice {
+  if (list.length === 0) return airportExitForLandingHour(hour, "domestic", now);
+
+  const advices = list.map((f) => {
+    const scope: FlightScope = f.scope ?? "domestic";
+    return { advice: airportExitForLandingAt(f.at, scope) };
+  });
+
+  const future = advices
+    .filter((x) => isFutureExit(x.advice.arriveByAt, now))
+    .sort((a, b) => a.advice.arriveByAt.getTime() - b.advice.arriveByAt.getTime());
+
+  if (future[0]) return future[0].advice;
+
+  const nearest = pickNearestArrival(list, now)!;
+  return airportExitForLandingAt(nearest.at, nearest.scope ?? "domestic");
+}
+
 async function loadAirport(
   loc: RaspLocation,
   hours: number[],
@@ -133,10 +163,11 @@ async function loadAirport(
   const hourStats: AirportHourStats[] = hours.map((hour) => {
     const list = byHour.get(hour) ?? [];
     const flights = list.length;
-    const nearest = pickNearestArrival(list, now);
-    const { exitWindow, arriveBy } = nearest
-      ? airportExitForLandingAt(nearest.at)
-      : airportExitForLandingHour(hour);
+    const { exitWindow, arriveBy, arriveByAt } = airportExitAdviceForBucket(
+      list,
+      hour,
+      now,
+    );
     return {
       hour,
       hourLabel: formatHour(hour),
@@ -144,6 +175,7 @@ async function loadAirport(
       passengers: flights * pax,
       exitWindow,
       arriveBy,
+      arriveByAt: arriveByAt.toISOString(),
       isPeak: flights >= 8,
       items: list.map(toScheduleItemDto),
     };
@@ -153,7 +185,8 @@ async function loadAirport(
   let tipArrive = nowBucket?.arriveBy;
   let tipExit = nowBucket?.exitWindow;
   for (const h of hourStats) {
-    if (h.flights > 0 && isFutureAdvice(h.arriveBy, h.hour, hours, now)) {
+    if (h.flights <= 0 || !h.arriveByAt) continue;
+    if (isFutureExit(new Date(h.arriveByAt), now)) {
       tipArrive = h.arriveBy;
       tipExit = h.exitWindow;
       break;
@@ -301,15 +334,16 @@ export async function getAirportsSchedule(cityId: CityId): Promise<AirportsPaylo
 
   const airports = await Promise.all(locs.map((loc) => loadAirport(loc, hours, now)));
 
-  // Совет: только будущие окна выхода, максимум по оценке пассажиров
+  // Совет: будущие окна выхода (с учётом ВВЛ +30 / МВЛ +60…90), максимум по пассажирам
   let tip: AirportsPayload["tip"] = null;
   let bestScore = -1;
   for (const a of airports) {
     for (const h of a.hours) {
-      if (h.flights <= 0) continue;
-      if (!isFutureAdvice(h.arriveBy, h.hour, hours, now)) continue;
-      const when = adviceInstant(h.arriveBy, h.hour, hours, now).getTime();
-      // Prefer higher passenger estimate; slight preference for sooner slots
+      if (h.flights <= 0 || !h.arriveByAt) continue;
+      const whenAt = new Date(h.arriveByAt);
+      if (!isFutureExit(whenAt, now)) continue;
+      const when = whenAt.getTime();
+      // Prefer higher passenger estimate; slight preference for sooner exit waves
       const soonBonus = Math.max(0, 1 - (when - now.getTime()) / (12 * 60 * 60 * 1000));
       const score = h.passengers + soonBonus * 200;
       if (score > bestScore) {

@@ -48,31 +48,68 @@ export function moscowMinutesOfDay(d: Date): number {
   return hour * 60 + minute;
 }
 
-/**
- * Airport: passengers exit ~+30…+75 min after landing.
- * Based on concrete landing time, not the hour label.
- */
-export function airportExitForLandingAt(at: Date) {
-  const land = moscowMinutesOfDay(at);
-  const exitFrom = land + 30;
-  const exitTo = land + 75;
-  return {
-    exitWindow: formatRange(exitFrom, exitTo),
-    arriveBy: formatClock(exitFrom),
-  };
+export type AirportFlightScope = "domestic" | "international";
+
+function formatMoscowClock(d: Date): string {
+  return d.toLocaleTimeString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export interface AirportExitAdvice {
+  exitWindow: string;
+  arriveBy: string;
+  /** Absolute instant when passengers start exiting (driver should arrive by then) */
+  arriveByAt: Date;
+  exitToAt: Date;
 }
 
 /**
- * Airport fallback when no flights in the hour bucket.
+ * Airport exit after landing:
+ * - domestic: ~30 min
+ * - international: ~1–1.5 h (passport / baggage)
  */
-export function airportExitForLandingHour(hour: number) {
-  const land = hour * 60;
-  const exitFrom = land + 30;
-  const exitTo = land + 75;
-  return {
-    exitWindow: formatRange(exitFrom, exitTo),
-    arriveBy: formatClock(exitFrom),
-  };
+export function airportExitForLandingAt(
+  at: Date,
+  scope: AirportFlightScope = "domestic",
+): AirportExitAdvice {
+  const fromMin = scope === "international" ? 60 : 30;
+  const toMin = scope === "international" ? 90 : 30;
+  const arriveByAt = new Date(at.getTime() + fromMin * 60_000);
+  const exitToAt = new Date(at.getTime() + toMin * 60_000);
+  const arriveBy = formatMoscowClock(arriveByAt);
+  const exitWindow =
+    fromMin === toMin
+      ? arriveBy
+      : `${arriveBy}–${formatMoscowClock(exitToAt)}`;
+  return { exitWindow, arriveBy, arriveByAt, exitToAt };
+}
+
+/**
+ * Airport fallback when no flights in the hour bucket (assume domestic mix).
+ */
+export function airportExitForLandingHour(
+  hour: number,
+  scope: AirportFlightScope = "domestic",
+  now: Date = moscowNow(),
+): AirportExitAdvice {
+  const dateKey = moscowDateKey(now);
+  const landAt = moscowWallTime(dateKey, hour, 0, 0);
+  // If this hour is after midnight wrap in the upcoming window, landAt today may be
+  // in the past relative to "tomorrow" hours — callers with concrete flights
+  // should use airportExitForLandingAt instead.
+  if (hour < moscowHour(now) && hour <= 12) {
+    const tomorrow = new Date(landAt.getTime() + 24 * 60 * 60 * 1000);
+    return airportExitForLandingAt(tomorrow, scope);
+  }
+  return airportExitForLandingAt(landAt, scope);
+}
+
+export function isFutureExit(arriveByAt: Date, now: Date = moscowNow(), bufferMs = 2 * 60 * 1000) {
+  return arriveByAt.getTime() > now.getTime() + bufferMs;
 }
 
 /**

@@ -1,5 +1,6 @@
 import type { RaspTransport } from "./locations";
 import { moscowDateKey } from "@/lib/schedule-utils";
+import { resolveFlightScope, type FlightScope } from "./flight-scope";
 
 export interface RaspArrival {
   number: string;
@@ -12,6 +13,9 @@ export interface RaspArrival {
   /** Откуда / маршрут */
   from?: string;
   title?: string;
+  /** Domestic vs international — airport exit timing */
+  scope?: FlightScope;
+  originIata?: string;
 }
 
 export interface ScheduleItemDto {
@@ -23,6 +27,7 @@ export interface ScheduleItemDto {
   terminal?: string;
   status?: string;
   kind: RaspTransport;
+  scope?: FlightScope;
 }
 
 export interface PageThread {
@@ -36,7 +41,15 @@ export interface PageThread {
   };
   terminalName?: string;
   isSupplement?: boolean;
-  routeStations?: Array<{ title?: string; settlement?: string; iataCode?: string }>;
+  isInternational?: boolean;
+  international?: boolean;
+  routeStations?: Array<{
+    title?: string;
+    settlement?: string;
+    iataCode?: string;
+    country?: string;
+    countryCode?: string;
+  }>;
 }
 
 const UA =
@@ -176,6 +189,26 @@ function fromLabel(thread: PageThread): string | undefined {
   return first.settlement || first.title;
 }
 
+function scopeFromThread(thread: PageThread, from?: string): FlightScope {
+  const origin = thread.routeStations?.[0];
+  const explicit =
+    typeof thread.isInternational === "boolean"
+      ? thread.isInternational
+      : typeof thread.international === "boolean"
+        ? thread.international
+        : undefined;
+  return resolveFlightScope({
+    from,
+    originIata: origin?.iataCode,
+    originCountry: origin?.country || origin?.countryCode,
+    isInternational: explicit,
+  });
+}
+
+function scopeFromApiTitle(from?: string, title?: string): FlightScope {
+  return resolveFlightScope({ from, title });
+}
+
 /** Public station page (no API key). Good for plane + long-distance train. */
 export async function fetchArrivalsFromPage(
   raspId: number,
@@ -205,6 +238,8 @@ export async function fetchArrivalsFromPage(
     if (opts?.transport && transportType !== opts.transport) continue;
     const times = effectiveAt(thread);
     if (!times) continue;
+    const from = fromLabel(thread);
+    const originIata = thread.routeStations?.[0]?.iataCode;
     out.push({
       number: thread.number ?? "—",
       transportType,
@@ -212,7 +247,9 @@ export async function fetchArrivalsFromPage(
       scheduledAt: times.scheduledAt,
       status: times.status,
       terminal: cleanTerminal(thread.status?.actualTerminalName ?? thread.terminalName),
-      from: fromLabel(thread),
+      from,
+      originIata,
+      scope: transportType === "plane" ? scopeFromThread(thread, from) : undefined,
     });
   }
 
@@ -304,6 +341,7 @@ async function fetchArrivalsFromApiWithKey(
         terminal: cleanTerminal(item.terminal ?? item.platform),
         title,
         from,
+        scope: transportType === "plane" ? scopeFromApiTitle(from, title) : undefined,
       });
     }
 
@@ -405,5 +443,6 @@ export function toScheduleItemDto(a: RaspArrival): ScheduleItemDto {
     terminal: cleanTerminal(a.terminal),
     status: a.status,
     kind: a.transportType,
+    scope: a.scope,
   };
 }
