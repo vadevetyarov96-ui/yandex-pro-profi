@@ -1,5 +1,6 @@
 import type { RaspTransport } from "./locations";
 import { moscowDateKey } from "@/lib/schedule-utils";
+import { resolveFlightScope, type FlightScope } from "./flight-scope";
 
 export interface RaspArrival {
   number: string;
@@ -12,6 +13,9 @@ export interface RaspArrival {
   /** Откуда / маршрут */
   from?: string;
   title?: string;
+  /** Domestic vs international — airport exit timing */
+  scope?: FlightScope;
+  originIata?: string;
 }
 
 export interface ScheduleItemDto {
@@ -23,9 +27,10 @@ export interface ScheduleItemDto {
   terminal?: string;
   status?: string;
   kind: RaspTransport;
+  scope?: FlightScope;
 }
 
-interface PageThread {
+export interface PageThread {
   number?: string;
   transportType?: string;
   eventDt?: { time?: string; datetime?: string };
@@ -36,7 +41,15 @@ interface PageThread {
   };
   terminalName?: string;
   isSupplement?: boolean;
-  routeStations?: Array<{ title?: string; settlement?: string; iataCode?: string }>;
+  isInternational?: boolean;
+  international?: boolean;
+  routeStations?: Array<{
+    title?: string;
+    settlement?: string;
+    iataCode?: string;
+    country?: string;
+    countryCode?: string;
+  }>;
 }
 
 const UA =
@@ -114,25 +127,44 @@ function parseInitialState(html: string): { station?: { threads?: PageThread[]; 
   };
 }
 
-function effectiveAt(thread: PageThread): { at: Date; scheduledAt: Date; status?: string } | null {
+/** True when the board marks the flight/train as cancelled. */
+export function isCancelledStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const st = status.toLowerCase();
+  return (
+    st === "cancelled" ||
+    st === "canceled" ||
+    st.includes("cancel") ||
+    st.includes("отмен")
+  );
+}
+
+/**
+ * Slot time from the public station board.
+ * Cancelled → drop. Prefer live/estimated `actualDt` so delayed flights
+ * move into the hour they will actually land (not the planned one).
+ */
+export function effectiveAt(
+  thread: PageThread,
+): { at: Date; scheduledAt: Date; status?: string } | null {
   const scheduledRaw = thread.eventDt?.datetime;
   if (!scheduledRaw) return null;
   const scheduledAt = new Date(scheduledRaw);
   if (Number.isNaN(scheduledAt.getTime())) return null;
 
-  const st = thread.status?.status?.toLowerCase();
-  if (st === "cancelled" || st === "canceled") return null;
+  const status = thread.status?.status;
+  if (isCancelledStatus(status)) return null;
 
   const actualRaw = thread.status?.actualDt;
   let at = scheduledAt;
   if (actualRaw) {
     const actual = new Date(actualRaw);
     if (!Number.isNaN(actual.getTime())) {
-      if (st && st !== "scheduled") at = actual;
+      at = actual;
     }
   }
 
-  return { at, scheduledAt, status: thread.status?.status };
+  return { at, scheduledAt, status };
 }
 
 function mapTransport(t?: string): RaspTransport | null {
@@ -155,6 +187,26 @@ function fromLabel(thread: PageThread): string | undefined {
   const first = thread.routeStations?.[0];
   if (!first) return undefined;
   return first.settlement || first.title;
+}
+
+function scopeFromThread(thread: PageThread, from?: string): FlightScope {
+  const origin = thread.routeStations?.[0];
+  const explicit =
+    typeof thread.isInternational === "boolean"
+      ? thread.isInternational
+      : typeof thread.international === "boolean"
+        ? thread.international
+        : undefined;
+  return resolveFlightScope({
+    from,
+    originIata: origin?.iataCode,
+    originCountry: origin?.country || origin?.countryCode,
+    isInternational: explicit,
+  });
+}
+
+function scopeFromApiTitle(from?: string, title?: string): FlightScope {
+  return resolveFlightScope({ from, title });
 }
 
 /** Public station page (no API key). Good for plane + long-distance train. */
@@ -186,6 +238,8 @@ export async function fetchArrivalsFromPage(
     if (opts?.transport && transportType !== opts.transport) continue;
     const times = effectiveAt(thread);
     if (!times) continue;
+    const from = fromLabel(thread);
+    const originIata = thread.routeStations?.[0]?.iataCode;
     out.push({
       number: thread.number ?? "—",
       transportType,
@@ -193,7 +247,9 @@ export async function fetchArrivalsFromPage(
       scheduledAt: times.scheduledAt,
       status: times.status,
       terminal: cleanTerminal(thread.status?.actualTerminalName ?? thread.terminalName),
-      from: fromLabel(thread),
+      from,
+      originIata,
+      scope: transportType === "plane" ? scopeFromThread(thread, from) : undefined,
     });
   }
 
@@ -285,6 +341,7 @@ async function fetchArrivalsFromApiWithKey(
         terminal: cleanTerminal(item.terminal ?? item.platform),
         title,
         from,
+        scope: transportType === "plane" ? scopeFromApiTitle(from, title) : undefined,
       });
     }
 
@@ -328,6 +385,28 @@ export async function fetchArrivals(
   transport: RaspTransport,
   date: string,
 ): Promise<{ arrivals: RaspArrival[]; source: "api" | "page" }> {
+  // Official API is planned timetable only (no delays/cancels). Airport tips
+  // need the live board from the public page so flights move to the real slot.
+  if (transport === "plane") {
+    try {
+      const arrivals = await fetchArrivalsFromPage(location.raspId, {
+        transport: "plane",
+      });
+      return { arrivals, source: "page" };
+    } catch (pageErr) {
+      console.error("Yandex Rasp page failed for plane, trying API", pageErr);
+      if (process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP) {
+        try {
+          const arrivals = await fetchArrivalsFromApi(location.code, transport, date);
+          return { arrivals, source: "api" };
+        } catch (e) {
+          console.error("Yandex Rasp API also failed for plane", e);
+        }
+      }
+      throw pageErr instanceof Error ? pageErr : new Error(String(pageErr));
+    }
+  }
+
   if (process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP) {
     try {
       const arrivals = await fetchArrivalsFromApi(location.code, transport, date);
@@ -364,5 +443,6 @@ export function toScheduleItemDto(a: RaspArrival): ScheduleItemDto {
     terminal: cleanTerminal(a.terminal),
     status: a.status,
     kind: a.transportType,
+    scope: a.scope,
   };
 }

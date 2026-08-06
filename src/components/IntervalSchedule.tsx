@@ -24,6 +24,12 @@ function kindLabel(kind: ScheduleItem["kind"]) {
   return "поезд";
 }
 
+function scopeLabel(scope?: ScheduleItem["scope"]) {
+  if (scope === "international") return "МВЛ";
+  if (scope === "domestic") return "ВВЛ";
+  return null;
+}
+
 function displayTerminal(terminal?: string) {
   if (!terminal) return null;
   const t = terminal.trim();
@@ -99,6 +105,7 @@ export function IntervalSchedule({
           {filtered.map((item) => {
             const st = statusLabel(item.status);
             const term = displayTerminal(item.terminal);
+            const scope = scopeLabel(item.scope);
             return (
               <li
                 key={item.id}
@@ -113,6 +120,11 @@ export function IntervalSchedule({
                     <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
                       {kindLabel(item.kind)}
                     </span>
+                    {scope && (
+                      <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                        {scope}
+                      </span>
+                    )}
                     {term && (
                       <span className="text-[10px] text-[var(--muted)]">терм. {term}</span>
                     )}
