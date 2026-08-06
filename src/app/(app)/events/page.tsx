@@ -12,6 +12,7 @@ export default function EventsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [dayIndex, setDayIndex] = useState(0);
+  const [allDayOpen, setAllDayOpen] = useState(false);
 
   const load = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true);
@@ -40,10 +41,24 @@ export default function EventsPage() {
 
   const activeDay = data?.days[dayIndex] ?? data?.days[0] ?? null;
 
+  const { timedEvents, allDayEvents } = useMemo(() => {
+    const events = activeDay?.events ?? [];
+    return {
+      timedEvents: events.filter((e) => e.isTimed),
+      // «весь день» + «до HH:MM» — без старта сбоку; под спойлером
+      allDayEvents: events.filter((e) => !e.isTimed),
+    };
+  }, [activeDay]);
+
   const totalCount = useMemo(
     () => data?.days.reduce((sum, d) => sum + d.events.length, 0) ?? 0,
     [data],
   );
+
+  const selectDay = useCallback((index: number) => {
+    setDayIndex(index);
+    setAllDayOpen(false);
+  }, []);
 
   return (
     <>
@@ -93,7 +108,7 @@ export default function EventsPage() {
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setDayIndex(index)}
+                  onClick={() => selectDay(index)}
                   className={`min-w-[7.5rem] shrink-0 rounded-xl border px-3 py-2.5 text-left transition ${
                     active
                       ? "border-[var(--gold)] bg-gradient-to-b from-[#3a2a0a] to-[#1a1208] ring-1 ring-[var(--gold)]/40"
@@ -144,9 +159,48 @@ export default function EventsPage() {
                   </p>
                 </div>
               ) : (
-                activeDay.events.map((event) => (
-                  <EventCard key={`${activeDay.dateKey}-${event.id}`} event={event} />
-                ))
+                <>
+                  {timedEvents.map((event) => (
+                    <EventCard key={`${activeDay.dateKey}-${event.id}`} event={event} />
+                  ))}
+
+                  {allDayEvents.length > 0 && (
+                    <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+                      <button
+                        type="button"
+                        aria-expanded={allDayOpen}
+                        onClick={() => setAllDayOpen((v) => !v)}
+                        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-[var(--card-2)]"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-white">Весь день</p>
+                          <p className="mt-0.5 text-xs text-[var(--muted)]">
+                            {allDayEvents.length}{" "}
+                            {pluralEvents(allDayEvents.length)}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 text-[var(--gold)] transition-transform duration-200 ${
+                            allDayOpen ? "rotate-180" : ""
+                          }`}
+                          aria-hidden
+                        >
+                          ▾
+                        </span>
+                      </button>
+                      {allDayOpen && (
+                        <div className="space-y-3 border-t border-[var(--border)] px-3 py-3">
+                          {allDayEvents.map((event) => (
+                            <EventCard
+                              key={`${activeDay.dateKey}-${event.id}`}
+                              event={event}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </>
