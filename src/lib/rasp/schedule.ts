@@ -113,10 +113,12 @@ async function loadAirport(
   now: Date,
 ): Promise<AirportCardData> {
   const { from, to, dateKey, toDateKey } = windowBounds(hours, now);
+  // Page board already spans the near-term window (with live delays); only the
+  // planned API needs a second date fetch when the window crosses midnight.
   const first = await fetchArrivals(loc, "plane", dateKey);
   let all = first.arrivals.filter((a) => a.at >= from && a.at <= to);
 
-  if (toDateKey !== dateKey) {
+  if (toDateKey !== dateKey && first.source === "api") {
     try {
       const next = await fetchArrivals(loc, "plane", toDateKey);
       all = [...all, ...next.arrivals.filter((a) => a.at >= from && a.at <= to)];
@@ -327,10 +329,8 @@ export async function getAirportsSchedule(cityId: CityId): Promise<AirportsPaylo
     cityId,
     airports,
     tip,
-    source:
-      process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP
-        ? "yandex-rasp-api"
-        : "yandex-rasp",
+    // Airports prefer the live public board (delays/cancels), not the planned API.
+    source: "yandex-rasp",
   };
 }
 

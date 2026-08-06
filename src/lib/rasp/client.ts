@@ -25,7 +25,7 @@ export interface ScheduleItemDto {
   kind: RaspTransport;
 }
 
-interface PageThread {
+export interface PageThread {
   number?: string;
   transportType?: string;
   eventDt?: { time?: string; datetime?: string };
@@ -114,25 +114,44 @@ function parseInitialState(html: string): { station?: { threads?: PageThread[]; 
   };
 }
 
-function effectiveAt(thread: PageThread): { at: Date; scheduledAt: Date; status?: string } | null {
+/** True when the board marks the flight/train as cancelled. */
+export function isCancelledStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const st = status.toLowerCase();
+  return (
+    st === "cancelled" ||
+    st === "canceled" ||
+    st.includes("cancel") ||
+    st.includes("отмен")
+  );
+}
+
+/**
+ * Slot time from the public station board.
+ * Cancelled → drop. Prefer live/estimated `actualDt` so delayed flights
+ * move into the hour they will actually land (not the planned one).
+ */
+export function effectiveAt(
+  thread: PageThread,
+): { at: Date; scheduledAt: Date; status?: string } | null {
   const scheduledRaw = thread.eventDt?.datetime;
   if (!scheduledRaw) return null;
   const scheduledAt = new Date(scheduledRaw);
   if (Number.isNaN(scheduledAt.getTime())) return null;
 
-  const st = thread.status?.status?.toLowerCase();
-  if (st === "cancelled" || st === "canceled") return null;
+  const status = thread.status?.status;
+  if (isCancelledStatus(status)) return null;
 
   const actualRaw = thread.status?.actualDt;
   let at = scheduledAt;
   if (actualRaw) {
     const actual = new Date(actualRaw);
     if (!Number.isNaN(actual.getTime())) {
-      if (st && st !== "scheduled") at = actual;
+      at = actual;
     }
   }
 
-  return { at, scheduledAt, status: thread.status?.status };
+  return { at, scheduledAt, status };
 }
 
 function mapTransport(t?: string): RaspTransport | null {
@@ -328,6 +347,28 @@ export async function fetchArrivals(
   transport: RaspTransport,
   date: string,
 ): Promise<{ arrivals: RaspArrival[]; source: "api" | "page" }> {
+  // Official API is planned timetable only (no delays/cancels). Airport tips
+  // need the live board from the public page so flights move to the real slot.
+  if (transport === "plane") {
+    try {
+      const arrivals = await fetchArrivalsFromPage(location.raspId, {
+        transport: "plane",
+      });
+      return { arrivals, source: "page" };
+    } catch (pageErr) {
+      console.error("Yandex Rasp page failed for plane, trying API", pageErr);
+      if (process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP) {
+        try {
+          const arrivals = await fetchArrivalsFromApi(location.code, transport, date);
+          return { arrivals, source: "api" };
+        } catch (e) {
+          console.error("Yandex Rasp API also failed for plane", e);
+        }
+      }
+      throw pageErr instanceof Error ? pageErr : new Error(String(pageErr));
+    }
+  }
+
   if (process.env.YANDEX_RASP_API_KEY || process.env.YANDEX_RASP_API_KEY_BACKUP) {
     try {
       const arrivals = await fetchArrivalsFromApi(location.code, transport, date);

@@ -83,7 +83,7 @@ export async function getSharedAirports(cityId: CityId): Promise<AirportsPayload
 
   const cachedFn = unstable_cache(
     async () => getAirportsSchedule(cityId),
-    ["airports-v4", cityId],
+    ["airports-v5", cityId],
     { revalidate: 60 * 60 * 12, tags: [airportsTag(cityId)] },
   );
 
